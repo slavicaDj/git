@@ -597,9 +597,8 @@ EOF
 }
 
 sub status_cmd {
-	list_and_choose({ LIST_ONLY => 1, HEADER => $status_head },
-			list_modified());
-	print "\n";
+	my @status_cmd = ("git", "add--helper", "--status");
+	!system(@status_cmd) or die "@status_cmd exited with code $?";
 }
 
 sub say_n_paths {
