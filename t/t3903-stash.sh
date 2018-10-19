@@ -1156,4 +1156,19 @@ test_expect_success 'stash -- <subdir> works with binary files' '
 	test_path_is_file subdir/untracked
 '
 
+test_expect_failure 'stash works when user.name and user.email are not set' '
+	git reset &&
+	>1 &&
+	git add 1 &&
+	test_config user.useconfigonly true &&
+	test_config stash.usebuiltin true &&
+	sane_unset GIT_AUTHOR_NAME &&
+	sane_unset GIT_AUTHOR_EMAIL &&
+	sane_unset GIT_COMMITTER_NAME &&
+	sane_unset GIT_COMMITTER_EMAIL &&
+	test_unconfig user.email &&
+	test_unconfig user.name &&
+	git stash
+'
+
 test_done
