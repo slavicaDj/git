@@ -1,5 +1,6 @@
 #include "builtin.h"
 #include "color.h"
+#include "config.h"
 #include "diff.h"
 #include "diffcore.h"
 #include "hashmap.h"
@@ -192,7 +193,8 @@ static void print_modified(void)
 	/* TRANSLATORS: you can adjust this to align "git add -i" status menu */
 	const char *modified_fmt = _("%12s %12s %s");
 	const char *header_color = get_color(COLOR_HEADER);
-	unsigned char sha1[20];
+	//unsigned char sha1[20];
+	struct object_id sha1;
 
 	struct hashmap_iter iter;
 	struct file_stat **files;
@@ -201,7 +203,7 @@ static void print_modified(void)
 	if (read_cache() < 0)
 		return;
 
-	s.reference = !get_sha1("HEAD", sha1) ? "HEAD": EMPTY_TREE_SHA1_HEX;
+	s.reference = !get_oid("HEAD", &sha1) ? "HEAD": empty_tree_oid_hex();
 	hashmap_init(&s.file_map, hash_cmp, 0);
 	list_modified_into_status(&s);
 
