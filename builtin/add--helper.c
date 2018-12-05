@@ -88,8 +88,8 @@ static int add_i_config(const char *var,
 	return git_default_config(var, value, cbdata);
 }
 
-static int hash_cmp(const void *entry, const void *entry_or_key,
-			      const void *keydata)
+static int hash_cmp(const void *unused_cmp_data, const void *entry,
+			const void *entry_or_key, const void *keydata)
 {
 	const struct file_stat *e1 = entry, *e2 = entry_or_key;
 	const char *name = keydata ? keydata : e2->name;
@@ -193,7 +193,6 @@ static void print_modified(void)
 	/* TRANSLATORS: you can adjust this to align "git add -i" status menu */
 	const char *modified_fmt = _("%12s %12s %s");
 	const char *header_color = get_color(COLOR_HEADER);
-	//unsigned char sha1[20];
 	struct object_id sha1;
 
 	struct hashmap_iter iter;
@@ -204,10 +203,10 @@ static void print_modified(void)
 		return;
 
 	s.reference = !get_oid("HEAD", &sha1) ? "HEAD": empty_tree_oid_hex();
-	hashmap_init(&s.file_map, hash_cmp, 0);
+	hashmap_init(&s.file_map, hash_cmp, NULL, 0);
 	list_modified_into_status(&s);
 
-	if (s.file_map.size < 1) {
+	if (hashmap_get_size(&s.file_map) < 1) {
 		printf("\n");
 		return;
 	}
@@ -219,13 +218,13 @@ static void print_modified(void)
 
 	hashmap_iter_init(&s.file_map, &iter);
 
-	files = xcalloc(s.file_map.size, sizeof(struct file_stat *));
+	files = xcalloc(hashmap_get_size(&s.file_map), sizeof(struct file_stat *));
 	while ((entry = hashmap_iter_next(&iter))) {
 		files[i++] = entry;
 	}
-	QSORT(files, s.file_map.size, alphabetical_cmp);
+	QSORT(files, hashmap_get_size(&s.file_map), alphabetical_cmp);
 
-	for (i = 0; i < s.file_map.size; i++) {
+	for (i = 0; i < hashmap_get_size(&s.file_map); i++) {
 		struct file_stat *f = files[i];
 
 		char worktree_changes[50];
