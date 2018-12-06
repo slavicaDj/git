@@ -1731,7 +1731,6 @@ sub diff_cmd {
 
 sub quit_cmd {
 	print __("Bye.\n");
-	print("slaviceee");
 	exit(0);
 }
 
