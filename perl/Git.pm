@@ -757,7 +757,7 @@ and returns boolean (true for "use color", false for "do not use color").
 
 sub get_colorbool {
 	my ($self, $var) = @_;
-	my $stdout_to_tty = (-t STDOUT) ? "true" : "false";
+	my $stdout_to_tty = $ENV{GIT_TEST_PRETEND_TTY} || (-t STDOUT) ? "true" : "false";
 	my $use_color = $self->command_oneline('config', '--get-colorbool',
 					       $var, $stdout_to_tty);
 	return ($use_color eq 'true');
