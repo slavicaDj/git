@@ -7,6 +7,12 @@
 #include "revision.h"
 
 #define HEADER_INDENT "      "
+#define HELP_INFO "status        - show paths with changes\n"\
+		"update        - add working tree state to the staged set of changes\n"\
+		"revert        - revert staged set of changes back to the HEAD version\n"\
+		"patch         - pick hunks and update selectively\n"\
+		"diff          - view diff between HEAD and index\n"\
+		"add untracked - add contents of untracked files to the staged set of changes"
 
 enum collection_phase {
 	WORKTREE,
@@ -251,6 +257,15 @@ static void print_modified(void)
 	free(files);
 }
 
+static void show_help(void)
+{
+	const char *help_color = get_color(COLOR_HELP);
+	const char *modified_fmt = _("%s");
+	printf("\n");
+	color_fprintf(stdout, help_color, modified_fmt, HELP_INFO);
+	printf("\n");
+}
+
 static const char * const builtin_add_helper_usage[] = {
 	N_("git add-interactive--helper <command>"),
 	NULL
@@ -258,7 +273,8 @@ static const char * const builtin_add_helper_usage[] = {
 
 enum cmd_mode {
 	DEFAULT = 0,
-	STATUS
+	STATUS,
+	HELP
 };
 
 int cmd_add__helper(int argc, const char **argv, const char *prefix)
@@ -268,6 +284,8 @@ int cmd_add__helper(int argc, const char **argv, const char *prefix)
 	struct option options[] = {
 		OPT_CMDMODE(0, "status", &mode,
 			 N_("print status information with diffstat"), STATUS),
+		OPT_CMDMODE(0, "show-help", &mode,
+			 N_("show help"), HELP),
 		OPT_END()
 	};
 
@@ -278,6 +296,8 @@ int cmd_add__helper(int argc, const char **argv, const char *prefix)
 
 	if (mode == STATUS)
 		print_modified();
+	else if (mode == HELP)
+		show_help();
 	else
 		usage_with_options(builtin_add_helper_usage,
 				   options);
