@@ -663,20 +663,20 @@ test_expect_success EXPENSIVE 'add -i with a lot of files' '
 test_expect_success 'show help from add--helper' '
 	cat >expect <<-\EOF &&
 
-	*** Commands ***
-	  1: [s]tatus	  2: [u]pdate	  3: [r]evert	  4: [a]dd untracked
-	  5: [p]atch	  6: [d]iff	  7: [q]uit	  8: [h]elp
-	What now> 
+	<BOLD>*** Commands ***<RESET>
+	  1: <BOLD;BLUE>s<RESET>tatus	  2: <BOLD;BLUE>u<RESET>pdate	  3: <BOLD;BLUE>r<RESET>evert	  4: <BOLD;BLUE>a<RESET>dd untracked
+	  5: <BOLD;BLUE>p<RESET>atch	  6: <BOLD;BLUE>d<RESET>iff	  7: <BOLD;BLUE>q<RESET>uit	  8: <BOLD;BLUE>h<RESET>elp
+	<BOLD;BLUE>What now<RESET>> 
 	<BOLD;RED>status        - show paths with changes
 	update        - add working tree state to the staged set of changes
 	revert        - revert staged set of changes back to the HEAD version
 	patch         - pick hunks and update selectively
 	diff          - view diff between HEAD and index
 	add untracked - add contents of untracked files to the staged set of changes<RESET>
-	*** Commands ***
-	  1: [s]tatus	  2: [u]pdate	  3: [r]evert	  4: [a]dd untracked
-	  5: [p]atch	  6: [d]iff	  7: [q]uit	  8: [h]elp
-	What now> 
+	<BOLD>*** Commands ***<RESET>
+	  1: <BOLD;BLUE>s<RESET>tatus	  2: <BOLD;BLUE>u<RESET>pdate	  3: <BOLD;BLUE>r<RESET>evert	  4: <BOLD;BLUE>a<RESET>dd untracked
+	  5: <BOLD;BLUE>p<RESET>atch	  6: <BOLD;BLUE>d<RESET>iff	  7: <BOLD;BLUE>q<RESET>uit	  8: <BOLD;BLUE>h<RESET>elp
+	<BOLD;BLUE>What now<RESET>> 
 	Bye.
 	EOF
 	test_write_lines h | GIT_TEST_PRETEND_TTY=1 git add -i >actual.colored &&
