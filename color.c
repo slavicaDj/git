@@ -323,6 +323,10 @@ static int check_auto_color(int fd)
 {
 	static int color_stderr_is_tty = -1;
 	int *is_tty_p = fd == 1 ? &color_stdout_is_tty : &color_stderr_is_tty;
+
+	if (git_env_bool("GIT_TEST_PRETEND_TTY", 0))
+		return 1;
+
 	if (*is_tty_p < 0)
 		*is_tty_p = isatty(fd);
 	if (*is_tty_p || (fd == 1 && pager_in_use() && pager_use_color)) {

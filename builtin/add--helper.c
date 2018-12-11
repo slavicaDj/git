@@ -53,7 +53,7 @@ static char colors[][COLOR_MAXLEN] = {
 
 static const char *get_color(enum color_add_i ix)
 {
-	if (git_env_bool("GIT_TEST_PRETEND_TTY", 0) || want_color(use_color))
+	if (want_color(use_color))
 		return colors[ix];
 	return "";
 }
