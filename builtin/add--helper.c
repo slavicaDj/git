@@ -161,6 +161,7 @@ static void collect_changes_worktree(struct collection_status *s)
 
 	rev.max_count = 0;
 
+	rev.diffopt.flags.ignore_dirty_submodules = 1;
 	rev.diffopt.output_format = DIFF_FORMAT_CALLBACK;
 	rev.diffopt.format_callback = collect_changes_cb;
 	rev.diffopt.format_callback_data = s;
