@@ -800,3 +800,20 @@ void add_i_status(void)
 	free(s);
 	free_choices(&choices);
 }
+
+void add_i_show_help(void)
+{
+	const char *help_color = get_color(COLOR_HELP);
+	color_fprintf_ln(stdout, help_color, "status        - %s",
+			_("show paths with changes"));
+	color_fprintf_ln(stdout, help_color, "update        - %s",
+			_("add working tree state to the staged set of changes"));
+	color_fprintf_ln(stdout, help_color, "revert        - %s",
+			_("revert staged set of changes back to the HEAD version"));
+	color_fprintf_ln(stdout, help_color, "patch         - %s",
+			_("pick hunks and update selectively"));
+	color_fprintf_ln(stdout, help_color, "diff          - %s",
+			_("view diff between HEAD and index"));
+	color_fprintf_ln(stdout, help_color, "add untracked - %s",
+			_("add contents of untracked files to the staged set of changes"));
+}
