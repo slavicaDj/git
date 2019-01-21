@@ -32,7 +32,7 @@ int cmd_add__helper(int argc, const char **argv, const char *prefix)
 			     PARSE_OPT_KEEP_ARGV0);
 
 	if (mode == STATUS)
-		add_i_print_modified();
+		add_i_status();
 	else if (mode == HELP)
 		add_i_show_help();
 	else

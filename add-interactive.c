@@ -8,6 +8,8 @@
 
 #define HEADER_INDENT "      "
 
+#define HEADER_MAXLEN 30
+
 enum collection_phase {
 	WORKTREE,
 	INDEX
@@ -28,6 +30,17 @@ struct collection_status {
 	struct pathspec pathspec;
 
 	struct hashmap file_map;
+};
+
+struct list_and_choose_options {
+	int column_n;
+	unsigned singleton:1;
+	unsigned list_flat:1;
+	unsigned list_only:1;
+	unsigned immediate:1;
+	char *header;
+	const char *prompt;
+	void (*on_eof_fn)(void);
 };
 
 static int use_color = -1;
@@ -177,48 +190,106 @@ static void collect_changes_index(struct collection_status *s)
 	run_diff_index(&rev, 1);
 }
 
-void add_i_print_modified(void)
+static int is_inital_commit(void)
+{
+	struct object_id sha1;
+	if (get_oid("HEAD", &sha1))
+		return 1;
+	return 0;
+}
+
+static const char *get_diff_reference(void)
+{
+	if(is_inital_commit())
+		return empty_tree_oid_hex();
+	return "HEAD";
+}
+
+static void filter_files(const char *filter, struct hashmap *file_map,
+						struct file_stat **files)
+{
+
+	for (int i = 0; i < hashmap_get_size(file_map); i++) {
+		struct file_stat *f = files[i];
+
+		if ((!(f->worktree.added || f->worktree.deleted)) &&
+		   (!strcmp(filter, "file-only")))
+				hashmap_remove(file_map, f, NULL);
+
+		if ((!(f->index.added || f->index.deleted)) &&
+		   (!strcmp(filter, "index-only")))
+				hashmap_remove(file_map, f, NULL);
+	}
+}
+
+static struct collection_status *print_modified(const char *filter,
+				 struct list_and_choose_options *opts)
 {
 	int i = 0;
-	struct collection_status s;
-	/* TRANSLATORS: you can adjust this to align "git add -i" status menu */
-	const char *modified_fmt = _("%12s %12s %s");
-	const char *header_color = get_color(COLOR_HEADER);
-	struct object_id sha1;
-
+	struct collection_status *s = xcalloc(1, sizeof(struct collection_status *));
 	struct hashmap_iter iter;
 	struct file_stat **files;
 	struct file_stat *entry;
 
-	if (read_cache() < 0)
-		return;
-
-	s.reference = !get_oid("HEAD", &sha1) ? "HEAD": empty_tree_oid_hex();
-	hashmap_init(&s.file_map, hash_cmp, NULL, 0);
-
-	collect_changes_worktree(&s);
-	collect_changes_index(&s);
-
-	if (hashmap_get_size(&s.file_map) < 1) {
+	if (read_cache() < 0) {
 		printf("\n");
-		return;
+		return NULL;
 	}
 
-	printf(HEADER_INDENT);
-	color_fprintf(stdout, header_color, modified_fmt, _("staged"),
-			_("unstaged"), _("path"));
-	printf("\n");
+	s->reference = get_diff_reference();
+	hashmap_init(&s->file_map, hash_cmp, NULL, 0);
 
-	hashmap_iter_init(&s.file_map, &iter);
+	collect_changes_worktree(s);
+	collect_changes_index(s);
 
-	files = xcalloc(hashmap_get_size(&s.file_map), sizeof(struct file_stat *));
+	if (hashmap_get_size(&s->file_map) < 1) {
+		printf("\n");
+		return NULL;
+	}
+
+	hashmap_iter_init(&s->file_map, &iter);
+
+	files = xcalloc(hashmap_get_size(&s->file_map), sizeof(struct file_stat *));
 	while ((entry = hashmap_iter_next(&iter))) {
 		files[i++] = entry;
 	}
-	QSORT(files, hashmap_get_size(&s.file_map), alphabetical_cmp);
+	QSORT(files, hashmap_get_size(&s->file_map), alphabetical_cmp);
 
-	for (i = 0; i < hashmap_get_size(&s.file_map); i++) {
-		struct file_stat *f = files[i];
+	if (filter)
+		filter_files(filter, &s->file_map, files);
+
+	free(files);
+	return s;
+}
+
+void add_i_status(void)
+{
+	int i = 0;
+	struct collection_status *s;
+	struct hashmap *map;
+	struct hashmap_iter iter;
+	struct file_stat *f;
+	struct list_and_choose_options opts;
+	const char *modified_fmt = _("%12s %12s %s");
+	const char *header_color = get_color(COLOR_HEADER);
+
+	opts.list_only = 1;
+	opts.header = xmalloc(sizeof(char) * (HEADER_MAXLEN + 1));
+
+	snprintf(opts.header, HEADER_MAXLEN + 1, modified_fmt,
+			_("staged"), _("unstaged"), _("path"));
+
+	s = print_modified(NULL, &opts);
+	if (s == NULL)
+		return;
+	
+	map = &s->file_map;
+
+	printf(HEADER_INDENT);
+	color_fprintf_ln(stdout, header_color, "%s", opts.header);
+
+	hashmap_iter_init(map, &iter);
+	while ((f = hashmap_iter_next(&iter))) {
 
 		char worktree_changes[50];
 		char index_changes[50];
@@ -238,11 +309,11 @@ void add_i_print_modified(void)
 		printf(" %2d: ", i + 1);
 		printf(modified_fmt, index_changes, worktree_changes, f->name);
 		printf("\n");
+		i++;
 	}
 	printf("\n");
-
-	free(files);
-	hashmap_free(&s.file_map, 1);
+	free(map);
+	free(s);
 }
 
 void add_i_show_help(void)
