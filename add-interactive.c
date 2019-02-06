@@ -591,9 +591,11 @@ top:
 	while (1) {
 		int last_lf = 0;
 		const char *prompt_color = get_color(COLOR_PROMPT);
+		const char *error_color = get_color(COLOR_ERROR);
 		struct strbuf input = STRBUF_INIT;
-		char *choice = NULL;
-		char *token;
+		struct strbuf choice;
+		struct strbuf token;
+		char *token_tmp;
 		regex_t *regex_dash_range;
 		regex_t *regex_number;
 		const char *pattern_dash_range;
@@ -612,44 +614,44 @@ top:
 			char chosen = chosen_list[i]? '*' : ' ';
 			char *print;
 			char *highlighted;
-
+			const char *modified_fmt = _("%12s %12s %s");
+			char worktree_changes[50];
+			char index_changes[50];
+			char print_buf[100];
+			struct file_stat *f = files[i];
+			
 			if (prefixes)
 				highlighted = highlight_prefix(prefixes[i]);
 
 			if (commands)
 				print = highlighted? highlighted : commands[i]->name;
 
-			if (files != NULL) {
-				char worktree_changes[50];
-				char index_changes[50];
-				char print_buf[100];
-				struct file_stat *f = files[i];
-				const char *modified_fmt = _("%12s %12s %s");
+			if (!files)
+				return NULL;
 
-				if (f->worktree.added || f->worktree.deleted)
-					snprintf(worktree_changes, 50, "+%"PRIuMAX"/-%"PRIuMAX,
-							f->worktree.added, f->worktree.deleted);
-				else
-					snprintf(worktree_changes, 50, "%s", _("nothing"));
+			if (f->worktree.added || f->worktree.deleted)
+				snprintf(worktree_changes, 50, "+%"PRIuMAX"/-%"PRIuMAX,
+						f->worktree.added, f->worktree.deleted);
+			else
+				snprintf(worktree_changes, 50, "%s", _("nothing"));
 
-				if (f->index.added || f->index.deleted)
-					snprintf(index_changes, 50, "+%"PRIuMAX"/-%"PRIuMAX,
-							f->index.added, f->index.deleted);
-				else
-					snprintf(index_changes, 50, "%s", _("unchanged"));
+			if (f->index.added || f->index.deleted)
+				snprintf(index_changes, 50, "+%"PRIuMAX"/-%"PRIuMAX,
+						f->index.added, f->index.deleted);
+			else
+				snprintf(index_changes, 50, "%s", _("unchanged"));
 
-				if (!prefixes)
-					highlighted = f->name;
-				
-				snprintf(print_buf, 100, modified_fmt, index_changes,
-						worktree_changes, highlighted);
-				print = xmalloc(strlen(print_buf) + 1);
-				snprintf(print, 100, "%s", print_buf);
-			}
+			if (!prefixes)
+				highlighted = f->name;
+			
+			snprintf(print_buf, 100, modified_fmt, index_changes,
+					worktree_changes, highlighted);
+			print = xmalloc(strlen(print_buf) + 1);
+			snprintf(print, 100, "%s", print_buf);
 
 			printf("%c%2d: %s", chosen, i + 1, print);
 
-			if ((opts->list_flat) && ((i+1) % (opts->list_flat))) {
+			if ((opts->list_flat) && ((i + 1) % (opts->list_flat))) {
 				printf("\t");
 				last_lf = 0;
 			}
@@ -672,43 +674,34 @@ top:
 		else
 			printf(">> ");
 
-		// if (!(strbuf_read(&input, 0, 0) < 0)) {
-		// 	printf("\n");
-		// 	if (opts->on_eof_fn)
-		// 		opts->on_eof_fn();
-		// 	break;
-		// }
+		fflush(stdout);
+		strbuf_getline(&input, stdin);
+		strbuf_trim(&input);
 
-		if (strbuf_getline_lf(&input, stdin) != EOF)
-			strbuf_trim(&input);
-
-		if (!input.buf) {
-			printf("buffer is empty\n");
+		if (!input.buf)
 			break;
-		}
 		
-		if (!strcmp(input.buf, "\n")) {
+		if (!input.buf[0]) {
 			printf("\n");
-			printf("buffer is newline\n");
-			strbuf_trim(&input);
 			if (opts->on_eof_fn)
 				opts->on_eof_fn();
 			break;
 		}
-
-		printf("buffer (%s) is == ? : %d\n", input.buf, !strcmp(input.buf, "?"));
 
 		if (!strcmp(input.buf, "?")) {
 			opts->singleton? singleton_prompt_help_cmd() : prompt_help_cmd();
 			goto top;
 		}
 
-		token = strtok(input.buf, delim);
-		for (int j = 0; token != NULL; j++) {
+		token_tmp = strtok(input.buf, delim);
+		strbuf_init(&token, 0);
+		strbuf_add(&token, token_tmp, strlen(token_tmp));
+
+		while (1) {
 			int choose = 1;
 			int bottom = 0, top = 0;
-			choice[0] = token[0];
-			choice[1] = '\0';
+			strbuf_init(&choice, 0);
+			strbuf_addbuf(&choice, &token);
 
 			/* Input that begins with '-'; unchoose */
 			pattern_dash_range = "^-";
@@ -717,13 +710,15 @@ top:
 			if (regcomp(regex_dash_range, pattern_dash_range, REG_EXTENDED))
 				BUG("regex compilation for pattern %s failed",
 				   pattern_dash_range);
-			if (!regexec(regex_dash_range, choice, 0, NULL, 0))
+			if (!regexec(regex_dash_range, choice.buf, 0, NULL, 0)) {
 				choose = 0;
-
+				/* remove dash from input */
+				strbuf_remove(&choice, 0, 1);
+			}
 
 			/* A range can be specified like 5-7 or 5-. */
-			pattern_dash_range = "^(\\d+)-(\\d*)";
-			pattern_number = "^\\d+$";
+			pattern_dash_range = "^([0-9]+)-([0-9]*)$";
+			pattern_number = "^[0-9]+$";
 			regex_number = xmalloc(sizeof(*regex_number));
 
 			if (regcomp(regex_dash_range, pattern_dash_range, REG_EXTENDED))
@@ -732,35 +727,34 @@ top:
 			if (regcomp(regex_number, pattern_number, REG_EXTENDED))
 				BUG("regex compilation for pattern %s failed", pattern_number);
 
-			if (!regexec(regex_dash_range, choice, 0, NULL, 0)) { 
+			if (!regexec(regex_dash_range, choice.buf, 0, NULL, 0)) {
 				const char delim_dash[] = "-";
 				char *num = NULL;
-				num = strtok(choice, delim_dash);
+				num = strtok(choice.buf, delim_dash);
 				bottom = atoi(num);
 				num = strtok(NULL, delim_dash);
 				top = num? atoi(num) : (1 + size);
 			}
-			else if (!regexec(regex_number, choice, 0, NULL, 0)) {
-				bottom = top = atoi(choice);
-			}
-			else if (!strcmp(choice, "*")) {
+			else if (!regexec(regex_number, choice.buf, 0, NULL, 0))
+				bottom = top = atoi(choice.buf);
+			else if (!strcmp(choice.buf, "*")) {
 				bottom = 1;
 				top = 1 + size;
 			}
 			else {
-				bottom = top = find_unique(choice, prefixes, size);
+				bottom = top = find_unique(choice.buf, prefixes, size);
 				if (!bottom) {
-					error(_("Huh (%s)?\n"), choice);
+					color_fprintf_ln(stdout, error_color, _("Huh (%s)?"), choice.buf);
 					goto top;
 				}
 			}
 
 			if (opts->singleton && bottom != top) {
-				error(_("Huh (%s)?\n"), choice);
+				color_fprintf_ln(stdout, error_color, _("Huh (%s)?"), choice.buf);
 				goto top;
 			}
 
-			for (int i = bottom - 1; i < top - 1; i++) {
+			for (int i = bottom - 1; i <= top - 1; i++) {
 				if (size <= i || i < 0)
 					continue;
 				chosen_list[i] = choose;
@@ -768,15 +762,22 @@ top:
 					chosen_size++;
 			}
 
-			token = strtok(NULL, delim);
+			strbuf_release(&token);
+			strbuf_release(&choice);
+
+			token_tmp = strtok(NULL, delim);
+			if (!token_tmp)
+				break;
+			strbuf_init(&token, 0);
+			strbuf_add(&token, token_tmp, strlen(token_tmp));
 		}
 
-		if ((opts->immediate) || !(strcmp(input.buf, "*")))
+		if ((opts->immediate) || !(strcmp(choice.buf, "*")))
 			break; //last
 	}
 
 	if (type == 'f')
-		chosen_files = xcalloc(chosen_size, sizeof(struct file_stat *));
+		chosen_files = xcalloc(chosen_size + 1, sizeof(struct file_stat *));
 
 	for (int i = 0, j = 0; i < size; i++) {
 		if (chosen_list[i]) {
@@ -789,8 +790,10 @@ top:
 		}
 	}
 
-	if (type == 'f')
+	if (type == 'f') {
+		chosen_files[chosen_size] = NULL;
 		return chosen_files[0];
+	}
 
 	return NULL;
 }
@@ -801,8 +804,15 @@ void add_i_status(void)
 	struct list_and_choose_options opts;
 	const char *modified_fmt = _("%12s %12s %s");
 	const char type = 'f';
+	
+	// struct file_stat *f = NULL;
+	// struct file_stat *files= NULL;
 
-	opts.list_only = 1;
+	opts.list_only = 0;
+	opts.prompt = "What now";
+	opts.singleton = 0;
+	opts.list_flat = 1;
+	opts.on_eof_fn = &add_i_show_help;
 	opts.header = xmalloc(sizeof(char) * (HEADER_MAXLEN + 1));
 
 	snprintf(opts.header, HEADER_MAXLEN + 1, modified_fmt,
@@ -817,15 +827,6 @@ void add_i_status(void)
 	free(&s->file_map);
 	free(s);
 
-}
-
-static char *check_input(void)
-{
-	// struct strbuf input = STRBUF_INIT;
-	// strbuf_getline_lf(&input, stdin);
-	// return input.buf;
-	char *answer = git_prompt(_("My question? "), PROMPT_ECHO);
-	return answer;
 }
 
 void add_i_show_help(void)
@@ -843,7 +844,4 @@ void add_i_show_help(void)
 			_("view diff between HEAD and index"));
 	color_fprintf_ln(stdout, help_color, "add untracked - %s",
 			_("add contents of untracked files to the staged set of changes"));
-
-	printf("%s\n", check_input());
-
 }

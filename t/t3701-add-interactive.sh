@@ -641,7 +641,7 @@ test_expect_success 'add -p patch editing works with pathological context lines'
 
 test_expect_success 'show help from add--helper' '
 	git reset --hard &&
-	cat >expect <<-\EOF &&
+	cat >expect <<-EOF &&
 
 	<BOLD>*** Commands ***<RESET>
 	  1: <BOLD;BLUE>s<RESET>tatus	  2: <BOLD;BLUE>u<RESET>pdate	  3: <BOLD;BLUE>r<RESET>evert	  4: <BOLD;BLUE>a<RESET>dd untracked
@@ -655,7 +655,7 @@ test_expect_success 'show help from add--helper' '
 	<BOLD>*** Commands ***<RESET>
 	  1: <BOLD;BLUE>s<RESET>tatus	  2: <BOLD;BLUE>u<RESET>pdate	  3: <BOLD;BLUE>r<RESET>evert	  4: <BOLD;BLUE>a<RESET>dd untracked
 	  5: <BOLD;BLUE>p<RESET>atch	  6: <BOLD;BLUE>d<RESET>iff	  7: <BOLD;BLUE>q<RESET>uit	  8: <BOLD;BLUE>h<RESET>elp
-	<BOLD;BLUE>What now<RESET>> 
+	<BOLD;BLUE>What now<RESET>>$SP
 	Bye.
 	EOF
 	test_write_lines h | GIT_PAGER_IN_USE=true TERM=vt100 git add -i >actual.colored &&
