@@ -1,3 +1,4 @@
+#include "add-interactive.h"
 #include "cache.h"
 #include "commit.h"
 #include "color.h"
@@ -25,6 +26,11 @@ struct collection_status {
 	struct pathspec pathspec;
 
 	struct hashmap file_map;
+};
+
+struct command {
+	char *name;
+	void (*command_fn)(void);
 };
 
 struct list_and_choose_options {
@@ -83,6 +89,42 @@ static const char *get_color(enum color_add_i ix)
 	if (want_color(use_color))
 		return list_and_choose_colors[ix];
 	return "";
+}
+
+static int parse_color_slot(const char *slot)
+{
+	if (!strcasecmp(slot, "prompt"))
+		return COLOR_PROMPT;
+	if (!strcasecmp(slot, "header"))
+		return COLOR_HEADER;
+	if (!strcasecmp(slot, "help"))
+		return COLOR_HELP;
+	if (!strcasecmp(slot, "error"))
+		return COLOR_ERROR;
+
+	return -1;
+}
+
+int add_i_config(const char *var,
+		 const char *value, void *cbdata)
+{
+	const char *name;
+
+	if (!strcmp(var, "color.interactive")) {
+		use_color = git_config_colorbool(var, value);
+		return 0;
+	}
+
+	if (skip_prefix(var, "color.interactive.", &name)) {
+		int slot = parse_color_slot(name);
+		if (slot < 0)
+			return 0;
+		if (!value)
+			return config_error_nonbool(var);
+		return color_parse(value, list_and_choose_colors[slot]);
+	}
+
+	return git_default_config(var, value, cbdata);
 }
 
 static int pathname_equal(const void *unused_cmp_data,
@@ -328,4 +370,83 @@ static struct choices *list_and_choose(struct choices *data,
 	strbuf_release(&print);
 	strbuf_release(&index_changes);
 	strbuf_release(&worktree_changes);
+}
+
+static struct choice *make_choice(const char *name )
+{
+	struct choice *choice;
+
+	FLEXPTR_ALLOC_STR(choice, name, name);
+	return choice;
+}
+
+static struct choice *add_choice(struct choices *choices,
+				 struct file_stat *file, struct command *command)
+{
+	struct choice *choice;
+
+	if (file && command)
+		BUG("either file_stat or command should be NULL\n");
+
+	switch (choices->type) {
+	case FILE_STAT:
+		choice = make_choice(file->name);
+		choice->u.file.index = file->index;
+		choice->u.file.worktree = file->worktree;
+		break;
+	case COMMAND:
+		choice = make_choice(command->name);
+		choice->u.command_fn = command->command_fn;
+		break;
+	}
+
+	ALLOC_GROW(choices->choices, choices->nr + 1, choices->alloc);
+	choices->choices[choices->nr++] = choice;
+
+	return choice;
+}
+
+static void free_choices(struct choices *choices)
+{
+	int i;
+
+	for (i = 0; i < choices->nr; i++)
+		free(choices->choices[i]);
+	free(choices->choices);
+	choices->choices = NULL;
+	choices->nr = choices->alloc = 0;
+}
+
+void add_i_status(void)
+{
+	int i;
+	struct file_stat **files;
+	struct list_and_choose_options opts = { 0 };
+	struct choices choices = CHOICES_INIT;
+	const char *modified_fmt = _("%12s %12s %s");
+
+	choices.type = FILE_STAT;
+
+	opts.list_only = 1;
+	opts.header_indent = HEADER_INDENT;
+	strbuf_init(&opts.header, 0);
+	strbuf_addf(&opts.header, modified_fmt,  _("staged"),
+		    _("unstaged"), _("path"));
+
+	files = list_modified(the_repository, NULL);
+	if (files == NULL) {
+		strbuf_release(&opts.header);
+		putchar('\n');
+		return;
+	}
+
+	for (i = 0; files[i]; i++)
+		add_choice(&choices, files[i], NULL);
+
+	list_and_choose(&choices, &opts);
+	putchar('\n');
+
+	strbuf_release(&opts.header);
+	free(files);
+	free_choices(&choices);
 }
