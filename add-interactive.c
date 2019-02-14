@@ -27,6 +27,64 @@ struct collection_status {
 	struct hashmap file_map;
 };
 
+struct list_and_choose_options {
+	int column_n;
+	unsigned singleton:1;
+	unsigned list_only:1;
+	unsigned list_only_file_names:1;
+	unsigned immediate:1;
+	struct strbuf header;
+	const char *prompt;
+	const char *header_indent;
+	void (*on_eof_fn)(void);
+};
+
+struct choice {
+	struct hashmap_entry e;
+	union {
+		void (*command_fn)(void);
+		struct {
+			struct adddel index, worktree;
+		} file;
+	} u;
+	size_t prefix_length;
+	const char *name;
+};
+
+enum choice_type {
+	FILE_STAT,
+	COMMAND
+};
+
+struct choices {
+	struct choice **choices;
+	size_t alloc, nr;
+	enum choice_type type;
+};
+#define CHOICES_INIT { NULL, 0, 0, 0 }
+
+static int use_color = -1;
+enum color_add_i {
+	COLOR_PROMPT,
+	COLOR_HEADER,
+	COLOR_HELP,
+	COLOR_ERROR
+};
+
+static char list_and_choose_colors[][COLOR_MAXLEN] = {
+	GIT_COLOR_BOLD_BLUE, /* Prompt */
+	GIT_COLOR_BOLD,      /* Header */
+	GIT_COLOR_BOLD_RED,  /* Help */
+	GIT_COLOR_BOLD_RED   /* Error */
+};
+
+static const char *get_color(enum color_add_i ix)
+{
+	if (want_color(use_color))
+		return list_and_choose_colors[ix];
+	return "";
+}
+
 static int pathname_equal(const void *unused_cmp_data,
 			  const void *entry, const void *entry_or_key,
 			  const void *keydata)
@@ -190,4 +248,84 @@ static struct file_stat **list_modified(struct repository *r,
 	hashmap_free(&s->file_map, 0);
 	free(s);
 	return files;
+}
+
+static void populate_wi_changes(struct strbuf *buf, struct adddel *ad,
+					char *no_changes)
+{
+	if (ad->add || ad->del)
+		strbuf_addf(buf, "+%"PRIuMAX"/-%"PRIuMAX,
+			    ad->add, ad->del);
+	else
+		strbuf_addf(buf, "%s", _(no_changes));
+}
+
+static struct choices *list_and_choose(struct choices *data,
+				       struct list_and_choose_options *opts)
+{
+	int i;
+	struct strbuf print_buf = STRBUF_INIT;
+	struct strbuf print = STRBUF_INIT;
+	struct strbuf index_changes = STRBUF_INIT;
+	struct strbuf worktree_changes = STRBUF_INIT;
+
+	if (!data)
+		return NULL;
+
+	while (1) {
+		int last_lf = 0;
+
+		if (opts->header.len) {
+			const char *header_color = get_color(COLOR_HEADER);
+			if (opts->header_indent)
+				fputs(opts->header_indent, stdout);
+			color_fprintf_ln(stdout, header_color, "%s", opts->header.buf);
+		}
+
+		for (i = 0; i < data->nr; i++) {
+			struct choice *c = data->choices[i];
+			const char *modified_fmt = _("%12s %12s %s");
+			
+			strbuf_reset(&print_buf);
+
+			strbuf_add(&print_buf, c->name, strlen(c->name));
+			
+			if ((data->type == FILE_STAT) && (!opts->list_only_file_names)) {
+				strbuf_reset(&print);
+				strbuf_reset(&index_changes);
+				strbuf_reset(&worktree_changes);
+
+				populate_wi_changes(&worktree_changes, &c->u.file.worktree,
+						    "nothing");
+				populate_wi_changes(&index_changes, &c->u.file.index,
+						    "unchanged");
+
+				strbuf_addbuf(&print, &print_buf);
+				strbuf_reset(&print_buf);
+				strbuf_addf(&print_buf, modified_fmt, index_changes.buf,
+					       worktree_changes.buf, print.buf);
+			}
+
+			printf(" %2d: %s", i + 1, print_buf.buf);
+
+			if ((opts->column_n) && ((i + 1) % (opts->column_n))) {
+				putchar('\t');
+				last_lf = 0;
+			}
+			else {
+				putchar('\n');
+				last_lf = 1;
+			}
+		}
+
+		if (!last_lf)
+			putchar('\n');
+
+		return NULL;
+	}
+
+	strbuf_release(&print_buf);
+	strbuf_release(&print);
+	strbuf_release(&index_changes);
+	strbuf_release(&worktree_changes);
 }
