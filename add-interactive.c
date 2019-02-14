@@ -1,3 +1,4 @@
+#include "add-interactive.h"
 #include "cache.h"
 #include "commit.h"
 #include "color.h"
@@ -6,6 +7,8 @@
 #include "revision.h"
 
 #define HEADER_INDENT "      "
+
+#define HEADER_MAXLEN 30
 
 enum collection_phase {
 	WORKTREE,
@@ -27,6 +30,11 @@ struct collection_status {
 	struct pathspec pathspec;
 
 	struct hashmap file_map;
+};
+
+struct command {
+	char *name;
+	void (*command_fn)(void);
 };
 
 struct list_and_choose_options {
@@ -82,6 +90,42 @@ static const char *get_color(enum color_add_i ix)
 	if (want_color(use_color))
 		return colors[ix];
 	return "";
+}
+
+static int parse_color_slot(const char *slot)
+{
+	if (!strcasecmp(slot, "prompt"))
+		return COLOR_PROMPT;
+	if (!strcasecmp(slot, "header"))
+		return COLOR_HEADER;
+	if (!strcasecmp(slot, "help"))
+		return COLOR_HELP;
+	if (!strcasecmp(slot, "error"))
+		return COLOR_ERROR;
+
+	return -1;
+}
+
+int add_i_config(const char *var,
+		const char *value, void *cbdata)
+{
+	const char *name;
+
+	if (!strcmp(var, "color.interactive")) {
+		use_color = git_config_colorbool(var, value);
+		return 0;
+	}
+
+	if (skip_prefix(var, "color.interactive.", &name)) {
+		int slot = parse_color_slot(name);
+		if (slot < 0)
+			return 0;
+		if (!value)
+			return config_error_nonbool(var);
+		return color_parse(value, colors[slot]);
+	}
+
+	return git_default_config(var, value, cbdata);
 }
 
 static int hash_cmp(const void *unused_cmp_data, const void *entry,
@@ -312,4 +356,79 @@ static struct choices *list_and_choose(struct choices *data,
 
 		return NULL;
 	}
+}
+
+static struct choice *make_choice(const char *name )
+{
+	struct choice *choice;
+	FLEXPTR_ALLOC_STR(choice, name, name);
+	return choice;
+}
+
+static struct choice *add_choice(struct choices *choices, const char type,
+								struct file_stat *file, struct command *command)
+{
+	struct choice *choice;
+	switch (type) {
+		case 'f':
+			choice = make_choice(file->name);
+			choice->u.file.index.added = file->index.added;
+			choice->u.file.index.deleted = file->index.deleted;
+			choice->u.file.worktree.added = file->worktree.added;
+			choice->u.file.worktree.deleted = file->worktree.deleted;
+			break;
+		case 'c':
+			choice = make_choice(command->name);
+			choice->u.command_fn = command->command_fn;
+			break;
+	}
+	choice->type = type;
+
+	ALLOC_GROW(choices->choices, choices->nr + 1, choices->alloc);
+	choices->choices[choices->nr++] = choice;
+
+	return choice;
+}
+
+static void free_choices(struct choices *choices)
+{
+	int i;
+
+	for (i = 0; i < choices->nr; i++)
+		free(choices->choices[i]);
+	free(choices->choices);
+	choices->choices = NULL;
+	choices->nr = choices->alloc = 0;
+}
+
+void add_i_status(void)
+{
+	struct collection_status *s;
+	struct list_and_choose_options opts;
+	struct hashmap *map;
+	struct hashmap_iter iter;
+	struct choices choices = CHOICES_INIT;
+	struct file_stat *entry;
+	const char *modified_fmt = _("%12s %12s %s");
+	const char type = 'f';
+
+	opts.header = xmalloc(sizeof(char) * (HEADER_MAXLEN + 1));
+	snprintf(opts.header, HEADER_MAXLEN + 1, modified_fmt,
+			_("staged"), _("unstaged"), _("path"));
+
+	s = list_modified(NULL);
+	if (s == NULL)
+		return;
+
+	map = &s->file_map;
+	hashmap_iter_init(map, &iter);
+	while ((entry = hashmap_iter_next(&iter))) {
+		add_choice(&choices, type, entry, NULL);
+	}
+
+	list_and_choose(&choices, &opts);
+
+	free(&s->file_map);
+	free(s);
+	free_choices(&choices);
 }
