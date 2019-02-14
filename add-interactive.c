@@ -5,6 +5,8 @@
 #include "diffcore.h"
 #include "revision.h"
 
+#define HEADER_INDENT "      "
+
 enum collection_phase {
 	WORKTREE,
 	INDEX
@@ -26,6 +28,61 @@ struct collection_status {
 
 	struct hashmap file_map;
 };
+
+struct list_and_choose_options {
+	int column_n;
+	unsigned singleton:1;
+	unsigned list_flat:1;
+	unsigned list_only:1;
+	unsigned list_only_file_names:1;
+	unsigned immediate:1;
+	char *header;
+	const char *prompt;
+	void (*on_eof_fn)(void);
+};
+
+struct choice {
+	struct hashmap_entry e;
+	char type;
+	union {
+		void (*command_fn)(void);
+		struct {
+			struct {
+				uintmax_t added, deleted;
+			} index, worktree;
+		} file;
+	} u;
+	size_t prefix_length;
+	const char *name;
+};
+
+struct choices {
+	struct choice **choices;
+	size_t alloc, nr;
+};
+#define CHOICES_INIT { NULL, 0, 0 }
+
+static int use_color = -1;
+enum color_add_i {
+	COLOR_PROMPT,
+	COLOR_HEADER,
+	COLOR_HELP,
+	COLOR_ERROR
+};
+
+static char colors[][COLOR_MAXLEN] = {
+	GIT_COLOR_BOLD_BLUE, /* Prompt */
+	GIT_COLOR_BOLD,      /* Header */
+	GIT_COLOR_BOLD_RED,  /* Help */
+	GIT_COLOR_RESET      /* Reset */
+};
+
+static const char *get_color(enum color_add_i ix)
+{
+	if (want_color(use_color))
+		return colors[ix];
+	return "";
+}
 
 static int hash_cmp(const void *unused_cmp_data, const void *entry,
 			const void *entry_or_key, const void *keydata)
@@ -185,4 +242,74 @@ static struct collection_status *list_modified(struct repository *r, const char 
 
 	free(files);
 	return s;
+}
+
+static struct choices *list_and_choose(struct choices *data,
+							struct list_and_choose_options *opts)
+{
+	if (!data)
+		return NULL;
+
+	while (1) {
+		int last_lf = 0;
+
+		if (opts->header) {
+			const char *header_color = get_color(COLOR_HEADER);
+			if (!opts->list_flat)
+				printf(HEADER_INDENT);
+			color_fprintf_ln(stdout, header_color, "%s", opts->header);
+		}
+
+		for (int i = 0; i < data->nr; i++) {
+			struct choice *c = data->choices[i];
+			char *print;
+			const char *modified_fmt = _("%12s %12s %s");
+			char worktree_changes[50];
+			char index_changes[50];
+			char print_buf[100];
+
+			print = (char *)c->name;
+			
+			if ((data->choices[i]->type == 'f') && (!opts->list_only_file_names)) {
+				uintmax_t worktree_added = c->u.file.worktree.added;
+				uintmax_t worktree_deleted = c->u.file.worktree.deleted;
+				uintmax_t index_added = c->u.file.index.added;
+				uintmax_t index_deleted = c->u.file.index.deleted;
+
+				if (worktree_added || worktree_deleted)
+					snprintf(worktree_changes, 50, "+%"PRIuMAX"/-%"PRIuMAX,
+							worktree_added, worktree_deleted);
+				else
+					snprintf(worktree_changes, 50, "%s", _("nothing"));
+
+				if (index_added || index_deleted)
+					snprintf(index_changes, 50, "+%"PRIuMAX"/-%"PRIuMAX,
+							index_added, index_deleted);
+				else
+					snprintf(index_changes, 50, "%s", _("unchanged"));
+
+				snprintf(print_buf, 100, modified_fmt, index_changes,
+						worktree_changes, print);
+				print = xmalloc(strlen(print_buf) + 1);
+				snprintf(print, 100, "%s", print_buf);
+			}
+
+			printf(" %2d: %s", i + 1, print);
+
+			if ((opts->list_flat) && ((i + 1) % (opts->column_n))) {
+				printf("\t");
+				last_lf = 0;
+			}
+			else {
+				printf("\n");
+				last_lf = 1;
+			}
+
+		}
+
+		if (!last_lf)
+			printf("\n");
+
+		return NULL;
+	}
 }
