@@ -47,27 +47,20 @@ struct list_and_choose_options {
 
 struct choice {
 	struct hashmap_entry e;
-	union {
-		void (*command_fn)(void);
-		struct {
-			struct adddel index, worktree;
-		} file;
-	} u;
 	size_t prefix_length;
 	const char *name;
 };
 
-enum choice_type {
-	FILE_STAT,
-	COMMAND
+struct file_choice {
+	struct choice choice;
+	struct adddel index, worktree;
 };
 
 struct choices {
 	struct choice **choices;
 	size_t alloc, nr;
-	enum choice_type type;
 };
-#define CHOICES_INIT { NULL, 0, 0, 0 }
+#define CHOICES_INIT { NULL, 0, 0 }
 
 struct prefix_entry {
 	struct hashmap_entry e;
@@ -554,14 +547,16 @@ top:
 			else
 				strbuf_add(&print_buf, c->name, strlen(c->name));
 			
-			if ((data->type == FILE_STAT) && (!opts->list_only_file_names)) {
+			if ((opts->list_only) && (!opts->list_only_file_names)) {
+				struct file_choice *choice = (struct file_choice*)c;
+
 				strbuf_reset(&print);
 				strbuf_reset(&index_changes);
 				strbuf_reset(&worktree_changes);
 
-				populate_wi_changes(&worktree_changes, &c->u.file.worktree,
+				populate_wi_changes(&worktree_changes, &choice->worktree,
 						    "nothing");
-				populate_wi_changes(&index_changes, &c->u.file.index,
+				populate_wi_changes(&index_changes, &choice->index,
 						    "unchanged");
 
 				strbuf_addbuf(&print, &print_buf);
@@ -713,36 +708,18 @@ top:
 	return results;
 }
 
-static struct choice *make_choice(const char *name )
+static struct file_choice *add_file_choice(struct choices *choices,
+				   struct file_stat *file)
 {
-	struct choice *choice;
+	struct file_choice *choice;
 
-	FLEXPTR_ALLOC_STR(choice, name, name);
-	return choice;
-}
-
-static struct choice *add_choice(struct choices *choices,
-				 struct file_stat *file, struct command *command)
-{
-	struct choice *choice;
-
-	if (file && command)
-		BUG("either file_stat or command should be NULL\n");
-
-	switch (choices->type) {
-	case FILE_STAT:
-		choice = make_choice(file->name);
-		choice->u.file.index = file->index;
-		choice->u.file.worktree = file->worktree;
-		break;
-	case COMMAND:
-		choice = make_choice(command->name);
-		choice->u.command_fn = command->command_fn;
-		break;
-	}
+	FLEXPTR_ALLOC_STR(choice, choice.name, file->name);
+	choice->choice.prefix_length = 0;
+	choice->index = file->index;
+	choice->worktree = file->worktree;
 
 	ALLOC_GROW(choices->choices, choices->nr + 1, choices->alloc);
-	choices->choices[choices->nr++] = choice;
+	choices->choices[choices->nr++] = (struct choice*)choice;
 
 	return choice;
 }
@@ -766,8 +743,6 @@ void add_i_status(void)
 	struct choices choices = CHOICES_INIT;
 	const char *modified_fmt = _("%12s %12s %s");
 
-	choices.type = FILE_STAT;
-
 	opts.list_only = 1;
 	opts.header_indent = HEADER_INDENT;
 	strbuf_init(&opts.header, 0);
@@ -782,7 +757,7 @@ void add_i_status(void)
 	}
 
 	for (i = 0; files[i]; i++)
-		add_choice(&choices, files[i], NULL);
+		add_file_choice(&choices, files[i]);
 
 	list_and_choose(&choices, &opts);
 	putchar('\n');
